@@ -1,15 +1,27 @@
 import os
 import hashlib
 import json
+from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models import AuditLog
 
-# Initialize or load Master Key
-MASTER_KEY = os.getenv("VAULT_MASTER_KEY", Fernet.generate_key())
-if isinstance(MASTER_KEY, str):
-    MASTER_KEY = MASTER_KEY.encode()
+load_dotenv()
+
+# Load Master Key from environment or persistent key file
+KEY_FILE = "./vault_master.key"
+env_key = os.getenv("VAULT_MASTER_KEY")
+if env_key:
+    MASTER_KEY = env_key.encode()
+elif os.path.exists(KEY_FILE):
+    with open(KEY_FILE, "rb") as f:
+        MASTER_KEY = f.read().strip()
+else:
+    MASTER_KEY = Fernet.generate_key()
+    with open(KEY_FILE, "wb") as f:
+        f.write(MASTER_KEY)
+
 fernet = Fernet(MASTER_KEY)
 
 VAULT_STORAGE_DIR = "./storage/vault"

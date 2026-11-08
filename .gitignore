@@ -1,3 +1,11 @@
+# Secrets & Environments
+.env
+.env.*
+*.env
+*.pem
+*.key
+secrets/
+
 # Python
 __pycache__/
 *.py[cod]

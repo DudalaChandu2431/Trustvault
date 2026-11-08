@@ -23,10 +23,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default=RoleEnum.USER, nullable=False)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
     documents: Mapped[list["Document"]] = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
     permissions: Mapped[list["DocumentPermission"]] = relationship("DocumentPermission", back_populates="user", cascade="all, delete-orphan")
+    reset_tokens: Mapped[list["PasswordResetOTP"]] = relationship("PasswordResetOTP", back_populates="user", cascade="all, delete-orphan")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -72,3 +75,25 @@ class AuditLog(Base):
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+class PasswordResetOTP(Base):
+    __tablename__ = "password_reset_otps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    otp_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reset_token: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_used: Mapped[bool] = mapped_column(Integer, default=0, nullable=False) # 0=False, 1=True
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="reset_tokens")
+
+class RevokedToken(Base):
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    revoked_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
