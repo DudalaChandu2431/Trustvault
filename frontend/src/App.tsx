@@ -19,6 +19,11 @@ import {
   FileCheck
 } from "lucide-react";
 import { api, type User, type DocumentItem, type Permission, type AuditLog, type VerifyChainResponse } from "./api";
+import AuthScreen from "./components/AuthScreen";
+import Modal from "./components/Modal";
+import { ToastContainer, type Toast } from "./components/Toast";
+
+let toastSeq = 0;
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -54,6 +59,19 @@ export default function App() {
 
   // Copied hash state
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+
+  // Toasts & Google popup
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [googleOpen, setGoogleOpen] = useState(false);
+
+  function notify(type: Toast["type"], message: string) {
+    const id = ++toastSeq;
+    setToasts((t) => [...t, { id, type, message }]);
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+  }
+  function dismissToast(id: number) {
+    setToasts((t) => t.filter((x) => x.id !== id));
+  }
 
   useEffect(() => {
     if (api.getToken()) {
@@ -94,8 +112,10 @@ export default function App() {
       }
       await api.login(authEmail, authPassword);
       await loadProfile();
+      notify("success", isRegisterMode ? "Account created — welcome to TrustVault!" : "Signed in securely. Vault unlocked.");
     } catch (err: any) {
       setAuthError(err.message || "Authentication failed");
+      notify("error", err.message || "Authentication failed");
     } finally {
       setAuthLoading(false);
     }
@@ -107,8 +127,14 @@ export default function App() {
     setAuthLoading(true);
     setAuthError("");
     api.login(email, pass)
-      .then(() => loadProfile())
-      .catch((err) => setAuthError(err.message))
+      .then(() => {
+        loadProfile();
+        notify("success", "Signed in securely. Vault unlocked.");
+      })
+      .catch((err) => {
+        setAuthError(err.message);
+        notify("error", err.message);
+      })
       .finally(() => setAuthLoading(false));
   }
 
@@ -289,100 +315,19 @@ export default function App() {
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
         {!currentUser ? (
-          <div className="max-w-md mx-auto mt-12">
-            <div className="glass-card rounded-2xl p-8 border border-slate-800 shadow-2xl relative overflow-hidden">
-              <div className="text-center mb-8">
-                <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
-                  <Lock className="w-8 h-8" />
-                </div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">
-                  {isRegisterMode ? "Create Secure Account" : "Access TrustVault"}
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Enforces Argon2id Hashing, AES-256 Storage & Cryptographic Audit
-                </p>
-              </div>
-
-              <div className="mb-6 bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 text-xs">
-                <div className="text-slate-400 mb-2 font-medium flex items-center justify-between">
-                  <span>Fast Switch Test Credentials:</span>
-                  <span className="text-[10px] text-emerald-400">1-Click</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => quickLogin("admin@trustvault.local", "Admin@123")}
-                    className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition"
-                  >
-                    <div className="font-semibold text-amber-300 text-[11px]">Admin</div>
-                    <div className="text-[9px] text-slate-400 truncate">Auditor Full</div>
-                  </button>
-                  <button
-                    onClick={() => quickLogin("alice@trustvault.local", "Password@123")}
-                    className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition"
-                  >
-                    <div className="font-semibold text-cyan-300 text-[11px]">Alice</div>
-                    <div className="text-[9px] text-slate-400 truncate">Doc Owner</div>
-                  </button>
-                  <button
-                    onClick={() => quickLogin("bob@trustvault.local", "Password@123")}
-                    className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition"
-                  >
-                    <div className="font-semibold text-emerald-300 text-[11px]">Bob</div>
-                    <div className="text-[9px] text-slate-400 truncate">ACL Viewer</div>
-                  </button>
-                </div>
-              </div>
-
-              {authError && (
-                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center space-x-2">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    required
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-emerald-500"
-                    placeholder="name@trustvault.local"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    required
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authLoading}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition flex items-center justify-center space-x-2"
-                >
-                  {authLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  <span>{isRegisterMode ? "Create Account" : "Secure Login"}</span>
-                </button>
-              </form>
-
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setIsRegisterMode(!isRegisterMode)}
-                  className="text-xs text-slate-400 hover:text-emerald-400 transition"
-                >
-                  {isRegisterMode ? "Already registered? Login" : "Need an account? Register now"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <AuthScreen
+            email={authEmail}
+            setEmail={setAuthEmail}
+            password={authPassword}
+            setPassword={setAuthPassword}
+            isRegisterMode={isRegisterMode}
+            setIsRegisterMode={setIsRegisterMode}
+            authError={authError}
+            authLoading={authLoading}
+            onSubmit={handleLogin}
+            quickLogin={quickLogin}
+            onGoogle={() => setGoogleOpen(true)}
+          />
         ) : (
           <div>
             <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 mb-8 gap-4">
@@ -995,6 +940,35 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} dismiss={dismissToast} />
+
+      {/* Animated Google sign-in popup */}
+      <Modal open={googleOpen} onClose={() => setGoogleOpen(false)} title="Continue with Google">
+        <div className="text-center py-2">
+          <div className="inline-flex p-3 rounded-2xl bg-white/10 border border-white/15 mb-4">
+            <svg viewBox="0 0 24 24" className="w-7 h-7" aria-hidden>
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+          </div>
+          <p className="text-sm text-slate-300 leading-relaxed mb-1">
+            Google OAuth sign-in is not yet connected to this vault.
+          </p>
+          <p className="text-xs text-slate-500 mb-5">
+            Add <span className="font-mono text-emerald-400">GOOGLE_CLIENT_ID</span> to the backend
+            to enable it — until then, use email + password or the 1-Click presets above.
+          </p>
+          <button
+            onClick={() => setGoogleOpen(false)}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition hover:from-emerald-400 hover:to-cyan-400"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
 
       <footer className="border-t border-slate-900 bg-slate-950/60 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500 font-mono">
