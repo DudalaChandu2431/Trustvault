@@ -83,6 +83,20 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
             detail=f"Account locked due to excessive failed attempts. Try again in {remaining_seconds // 60 + 1} minutes or reset password."
         )
 
+    if user and not user.is_active:
+        await log_audit_event(
+            db=db,
+            actor_id=user.id,
+            action="LOGIN_ATTEMPT_DEACTIVATED_USER",
+            target_type="User",
+            target_id=str(user.id),
+            payload={"email": user.email}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is deactivated. Please contact the administrator."
+        )
+
     if not user or not verify_password(credentials.password, user.password_hash):
         if user:
             user.failed_login_attempts += 1

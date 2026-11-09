@@ -26,6 +26,7 @@ class User(Base):
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     documents: Mapped[list["Document"]] = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
     permissions: Mapped[list["DocumentPermission"]] = relationship("DocumentPermission", back_populates="user", cascade="all, delete-orphan")

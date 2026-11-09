@@ -28,8 +28,8 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Tabs: 'vault' | 'audit' | 'threats'
-  const [activeTab, setActiveTab] = useState<"vault" | "audit" | "threats">("vault");
+  // Tabs: 'dashboard' | 'vault' | 'access' | 'audit' | 'threats' | 'settings'
+  const [activeTab, setActiveTab] = useState<"dashboard" | "vault" | "access" | "audit" | "threats" | "settings">("dashboard");
 
   // Documents
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -63,9 +63,12 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      if (activeTab === "vault") loadDocuments();
+      if (activeTab === "vault" || activeTab === "dashboard") loadDocuments();
       if (activeTab === "audit" && currentUser.role === "ADMIN") {
         loadAuditLogs();
+        verifyChain();
+      }
+      if (activeTab === "dashboard" && currentUser.role === "ADMIN") {
         verifyChain();
       }
     }
@@ -385,6 +388,18 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 mb-8 gap-4">
               <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
                 <button
+                  onClick={() => setActiveTab("dashboard")}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                    activeTab === "dashboard"
+                      ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  <span>Dashboard</span>
+                </button>
+
+                <button
                   onClick={() => setActiveTab("vault")}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
                     activeTab === "vault"
@@ -434,6 +449,85 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {activeTab === "dashboard" && (
+              <div className="space-y-8">
+                <div className="glass-card rounded-2xl p-6 border border-slate-800">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center space-x-2">
+                    <Shield className="w-4 h-4 text-emerald-400" />
+                    <span>Security Overview</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
+                      <div className="flex items-center space-x-2 text-emerald-400 mb-2">
+                        <FileText className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase tracking-wide">Encrypted Docs</span>
+                      </div>
+                      <p className="text-2xl font-bold text-white">{documents.length}</p>
+                      <p className="text-xs text-slate-500 mt-1">AES-256 Fernet at rest</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
+                      <div className="flex items-center space-x-2 text-cyan-400 mb-2">
+                        <Key className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase tracking-wide">Hash Chain</span>
+                      </div>
+                      <p className="text-2xl font-bold text-white">
+                        {chainStatus ? chainStatus.total_records : "—"}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">SHA-256 tamper-evident records</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
+                      <div className="flex items-center space-x-2 text-indigo-400 mb-2">
+                        <UserCheck className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase tracking-wide">Signed In As</span>
+                      </div>
+                      <p className="text-lg font-bold text-white break-all">{currentUser.email}</p>
+                      <p className="text-xs text-slate-500 mt-1">Role: {currentUser.role}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
+                      <div className="flex items-center space-x-2 text-emerald-400 mb-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase tracking-wide">Auth Status</span>
+                      </div>
+                      <p className="text-lg font-bold text-white">Argon2id + JWT</p>
+                      <p className="text-xs text-slate-500 mt-1">Rate-limited, lockout-protected</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-card rounded-2xl p-6 border border-slate-800">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center space-x-2">
+                    <Lock className="w-4 h-4 text-cyan-400" />
+                    <span>Quick Actions</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => setActiveTab("vault")}
+                      className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload & Encrypt Document</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("threats")}
+                      className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold hover:bg-indigo-500/20 transition"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>Review Security Posture</span>
+                    </button>
+                    {currentUser.role === "ADMIN" && (
+                      <button
+                        onClick={() => setActiveTab("audit")}
+                        className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-semibold hover:bg-cyan-500/20 transition"
+                      >
+                        <ShieldCheckIcon className="w-3.5 h-3.5" />
+                        <span>Verify Audit Chain</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {activeTab === "vault" && (
               <div className="space-y-8">
