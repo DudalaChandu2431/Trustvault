@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-ENV_PATH = Path("C:/Users/mudda/trustvault/backend/.env")
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH)
 else:

@@ -14,7 +14,7 @@ from app.models import User, RevokedToken
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-trustvault-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY") or "super-secret-trustvault-key-change-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
