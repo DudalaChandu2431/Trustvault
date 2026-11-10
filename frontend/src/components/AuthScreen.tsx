@@ -161,8 +161,8 @@ export default function AuthScreen({
 
           <motion.h1 variants={itemVariants} className="text-4xl xl:text-5xl font-extrabold tracking-tight leading-[1.12] text-white">
             The cryptographic{" "}
-            <span className="bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-              document fortress
+            <span className="text-emerald-400 font-semibold">
+              cryptographic vault
             </span>{" "}
             for your most sensitive files.
           </motion.h1>
@@ -453,7 +453,7 @@ export default function AuthScreen({
                 disabled={authLoading || (isRegisterMode && !allRulesPassed)}
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium text-sm transition relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="flex items-center justify-center space-x-2 relative z-10">
                   {authLoading ? (

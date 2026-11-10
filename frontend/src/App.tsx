@@ -403,12 +403,12 @@ export default function App() {
       <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center">
               <Shield className="w-5 h-5 text-slate-950 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                <span className="text-xl font-semibold tracking-tight text-slate-100">
                   TrustVault
                 </span>
                 <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
@@ -575,7 +575,7 @@ export default function App() {
                     <button
                       type="submit"
                       disabled={!uploadFile || uploading}
-                      className="w-full sm:w-auto px-6 py-4 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/20"
+                      className="w-full sm:w-auto px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium text-xs transition disabled:opacity-50 flex items-center justify-center space-x-2"
                     >
                       {uploading ? (
                         <>
@@ -745,7 +745,7 @@ export default function App() {
                     <button
                       onClick={verifyChain}
                       disabled={verifyingChain}
-                      className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-cyan-500/20 flex items-center space-x-2"
+                      className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-medium text-xs transition flex items-center space-x-2"
                     >
                       <RefreshCw className={`w-4 h-4 ${verifyingChain ? "animate-spin" : ""}`} />
                       <span>Verify Entire Chain</span>

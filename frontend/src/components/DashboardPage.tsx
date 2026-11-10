@@ -213,10 +213,7 @@ export default function DashboardPage({
               Vault Status · Online
             </p>
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              Welcome back,{" "}
-              <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-                {user.email.split("@")[0]}
-              </span>
+              Overview & Activity
             </h2>
             <p className="text-xs text-slate-400 mt-1">
               {documents.length} documents encrypted · {chainStatus?.total_records ?? 0} audit records chained

@@ -2,7 +2,10 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./trustvault.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    db_path = "/tmp/trustvault.db" if os.name != "nt" else "./trustvault.db"
+    DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
