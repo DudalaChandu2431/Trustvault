@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
+  X,
   Eye,
   EyeOff,
   FileText,
@@ -36,6 +38,8 @@ interface AuthScreenProps {
   setEmail: (v: string) => void;
   password: string;
   setPassword: (v: string) => void;
+  confirmPassword?: string;
+  setConfirmPassword?: (v: string) => void;
   isRegisterMode: boolean;
   setIsRegisterMode: (v: boolean) => void;
   authError: string;
@@ -63,6 +67,8 @@ export default function AuthScreen({
   setEmail,
   password,
   setPassword,
+  confirmPassword = "",
+  setConfirmPassword,
   isRegisterMode,
   setIsRegisterMode,
   authError,
@@ -72,6 +78,46 @@ export default function AuthScreen({
   onGoogle,
 }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Password rules validation for register mode
+  const rules = [
+    {
+      id: "len",
+      label: "Minimum 12 characters",
+      met: password.length >= 12,
+    },
+    {
+      id: "upper",
+      label: "At least 1 capital letter (A–Z)",
+      met: /[A-Z]/.test(password),
+    },
+    {
+      id: "lower",
+      label: "At least 1 small letter (a–z)",
+      met: /[a-z]/.test(password),
+    },
+    {
+      id: "num",
+      label: "At least 1 digit (0–9)",
+      met: /\d/.test(password),
+    },
+    {
+      id: "spec",
+      label: "At least 1 special char (@#$%&*!)",
+      met: /[@#$%&*!]/.test(password),
+    },
+    {
+      id: "spaces",
+      label: "No leading or trailing spaces",
+      met: password.length > 0 && password === password.trim(),
+    },
+  ];
+
+  const passwordsMatch = Boolean(
+    password && confirmPassword && password === confirmPassword
+  );
+  const allRulesPassed = rules.every((r) => r.met) && (!isRegisterMode || passwordsMatch);
 
   return (
     <div className="relative min-h-[78vh] flex items-center justify-center overflow-hidden">
@@ -284,7 +330,7 @@ export default function AuthScreen({
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-emerald-500 focus:shadow-[0_0_0_3px_rgba(16,185,129,0.18)] transition"
-                        placeholder={isRegisterMode ? "Min 8 chars, 1 special" : "••••••••"}
+                        placeholder={isRegisterMode ? "Min 12 chars, 1 upper, 1 lower, 1 digit, 1 special" : "••••••••"}
                       />
                       <button
                         type="button"
@@ -296,15 +342,102 @@ export default function AuthScreen({
                       </button>
                     </div>
                   </div>
+
+                  {isRegisterMode && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                          Confirm Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword && setConfirmPassword(e.target.value)}
+                            required
+                            className={`w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-900/90 border text-slate-100 text-sm focus:outline-none transition ${
+                              confirmPassword
+                                ? passwordsMatch
+                                  ? "border-emerald-500 focus:border-emerald-500 focus:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]"
+                                  : "border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.18)]"
+                                : "border-slate-700 focus:border-emerald-500 focus:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]"
+                            }`}
+                            placeholder="Re-enter your password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
+                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                          >
+                            {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {confirmPassword && (
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                            {passwordsMatch ? (
+                              <span className="text-emerald-400 flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> Passwords match
+                              </span>
+                            ) : (
+                              <span className="text-red-400 flex items-center gap-1">
+                                <X className="w-3.5 h-3.5" /> Passwords do not match
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Animated Password Rules Checklist */}
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1.5"
+                      >
+                        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Password Requirements
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {rules.map((rule) => (
+                            <motion.div
+                              key={rule.id}
+                              animate={{
+                                color: rule.met ? "#34d399" : "#94a3b8",
+                              }}
+                              className="flex items-center gap-1.5 text-[11px]"
+                            >
+                              <div
+                                className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-colors ${
+                                  rule.met
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-slate-800 text-slate-500"
+                                }`}
+                              >
+                                {rule.met ? (
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                                )}
+                              </div>
+                              <span className={rule.met ? "text-emerald-300" : "text-slate-400"}>
+                                {rule.label}
+                              </span>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
                 </motion.div>
               </AnimatePresence>
 
               <motion.button
                 type="submit"
-                disabled={authLoading}
+                disabled={authLoading || (isRegisterMode && !allRulesPassed)}
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition relative overflow-hidden group disabled:opacity-70"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="flex items-center justify-center space-x-2 relative z-10">
                   {authLoading ? (

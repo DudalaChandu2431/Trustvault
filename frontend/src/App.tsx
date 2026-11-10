@@ -35,6 +35,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authEmail, setAuthEmail] = useState("admin@trustvault.local");
   const [authPassword, setAuthPassword] = useState("Admin@123");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -132,7 +133,10 @@ export default function App() {
     setAuthError("");
     try {
       if (isRegisterMode) {
-        await api.register(authEmail, authPassword);
+        if (authPassword !== authConfirmPassword) {
+          throw new Error("Passwords do not match");
+        }
+        await api.register(authEmail, authPassword, authConfirmPassword);
       }
       await api.login(authEmail, authPassword);
       await loadProfile();
@@ -344,6 +348,8 @@ export default function App() {
             setEmail={setAuthEmail}
             password={authPassword}
             setPassword={setAuthPassword}
+            confirmPassword={authConfirmPassword}
+            setConfirmPassword={setAuthConfirmPassword}
             isRegisterMode={isRegisterMode}
             setIsRegisterMode={setIsRegisterMode}
             authError={authError}

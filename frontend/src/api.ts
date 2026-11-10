@@ -76,11 +76,11 @@ export const api = {
     return data;
   },
 
-  async register(email: string, password: string, role = "USER") {
+  async register(email: string, password: string, confirmPassword?: string, role = "USER") {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, role })
+      body: JSON.stringify({ email, password, confirm_password: confirmPassword ?? password, role })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Registration failed" }));

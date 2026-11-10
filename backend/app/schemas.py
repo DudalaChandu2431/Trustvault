@@ -1,32 +1,41 @@
 import re
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Optional
 
 EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
 
 def validate_password_complexity(v: str) -> str:
-    if len(v) < 8:
-        raise ValueError("Password must be at least 8 characters long")
+    if v != v.strip():
+        raise ValueError("Password cannot start or end with spaces")
+    if len(v) < 12:
+        raise ValueError("Password must be at least 12 characters long")
     if not re.search(r"[A-Z]", v):
-        raise ValueError("Password must contain at least one uppercase letter")
+        raise ValueError("Password must contain at least 1 uppercase letter (A-Z)")
     if not re.search(r"[a-z]", v):
-        raise ValueError("Password must contain at least one lowercase letter")
+        raise ValueError("Password must contain at least 1 lowercase letter (a-z)")
     if not re.search(r"\d", v):
-        raise ValueError("Password must contain at least one number")
-    if not re.search(r"[@$!%*?&#^_\-+=]", v):
-        raise ValueError("Password must contain at least one special character (@$!%*?&#^_-+=)")
+        raise ValueError("Password must contain at least 1 number (0-9)")
+    if not re.search(r"[@#$%&*!]", v):
+        raise ValueError("Password must contain at least 1 special character (@#$%&*!)")
     return v
 
 class UserRegister(BaseModel):
     email: str = Field(..., pattern=EMAIL_REGEX)
-    password: str = Field(..., min_length=8, description="Min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char")
+    password: str = Field(..., min_length=12, description="Min 12 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special (@#$%&*!)")
+    confirm_password: Optional[str] = None
     role: Optional[str] = "USER"
 
     @field_validator("password")
     @classmethod
     def check_password(cls, v: str) -> str:
         return validate_password_complexity(v)
+
+    @model_validator(mode="after")
+    def check_passwords_match(self):
+        if self.confirm_password is not None and self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
 
 class UserLogin(BaseModel):
     email: str = Field(..., pattern=EMAIL_REGEX)
@@ -45,7 +54,7 @@ class VerifyOTPResponse(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     reset_token: str
-    new_password: str = Field(..., min_length=8, description="Min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char")
+    new_password: str = Field(..., min_length=12, description="Min 12 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special (@#$%&*!)")
 
     @field_validator("new_password")
     @classmethod
@@ -54,7 +63,7 @@ class ResetPasswordRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str = Field(..., min_length=8, description="Min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char")
+    new_password: str = Field(..., min_length=12, description="Min 12 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special (@#$%&*!)")
 
     @field_validator("new_password")
     @classmethod
