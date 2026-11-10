@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+import pyotp  # Import at top level
+
 
 User = get_user_model()
 
@@ -98,6 +100,8 @@ class DocumentAccessLog(models.Model):
     success = models.BooleanField(default=False)
     reason = models.CharField(max_length=255, blank=True,
                               help_text="Why access was granted or denied")
+    # MFA tracking
+    mfa_verified = models.BooleanField(default=False, help_text="Was MFA verified for this access attempt?")
 
     class Meta:
         ordering = ['-timestamp']
@@ -109,11 +113,12 @@ class DocumentAccessLog(models.Model):
 
     def __str__(self):
         status = "granted" if self.success else "denied"
-        return f"{self.action} - {self.document.title}: {status} ({self.timestamp})"
+        mfa = " MFA" if self.mfa_verified else ""
+        return f"{self.action}{mfa} - {self.document.title}: {status} ({self.timestamp})"
 
 
 class UserProfile(models.Model):
-    """Extended user profile with role information."""
+    """Extended user profile with role information and MFA."""
     ROLE_CHOICES = [
         ('admin', 'Administrator'),
         ('owner', 'Document Owner'),
@@ -124,8 +129,11 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
     department = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=50, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # MFA fields
+    is_mfa_enabled = models.BooleanField(default=False, help_text="Whether MFA is enabled for this user")
+    mfa_secret_key = models.CharField(max_length=32, null=True, blank=True, help_text="Base32-encoded TOTP secret key")
+    mfa_recovery_codes = models.JSONField(default=list, help_text="Used recovery codes, empty list if none used")
+    mfa_last_verified = models.DateTimeField(null=True, blank=True, help_text="Last time MFA was successfully verified")
 
     class Meta:
         verbose_name_plural = 'User Profiles'
@@ -144,3 +152,15 @@ class UserProfile(models.Model):
     @property
     def is_viewer(self):
         return self.role == 'viewer'
+
+    def get_mfa_issuer(self):
+        return 'TrustVault'
+
+    def get_mfa_uri(self, user_email=None):
+        """Generate TOTP URI for QR code provisioning."""
+        if user_email is None:
+            user_email = self.user.email
+        return pyotp.TOTP(self.mfa_secret_key).provisioning_uri(
+            user_email,
+            issuer_name=self.get_mfa_issuer()
+        )

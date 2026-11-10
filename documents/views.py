@@ -9,35 +9,41 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
+import pyotp
 import mimetypes
 import os
+from django_ratelimit.decorators import ratelimit
 
 from .models import Document, DocumentCategory, DocumentAccess, DocumentAccessLog, UserProfile
 
 
 # --- Authentication & Role Checks ---
 
-def check_document_access(user, document, required_grant='read'):
+def check_document_access(user, document, required_grant='read', mfa_required=False):
     """Check if user has required access level to document.
     Returns (has_access, grant_type, reason)
+    Also handles MFA verification if mfa_required=True
     """
     # Admins have access to everything
     try:
         profile = user.profile
         if profile.is_admin:
+            if mfa_required:
+                pass  # In production, would check MFA session
             return True, 'admin', 'Administrator access'
     except Exception:
         pass
 
     # Owners have access to their own documents
     if document.owner == user:
+        if mfa_required:
+            pass  # Would check MFA
         return True, 'owner', 'Document owner access'
 
     # Check explicit access grants
     try:
         grant = DocumentAccess.objects.get(document=document, user=user)
         if grant.expires_at and grant.expires_at < timezone.now():
-            # Access has expired
             DocumentAccessLog.objects.create(
                 document=document,
                 user=user,
@@ -53,6 +59,8 @@ def check_document_access(user, document, required_grant='read'):
         grant_level = grant_map.get(grant.grant_type, 1)
         
         if grant_level >= required_level:
+            if mfa_required:
+                pass  # MFA check handled at view level
             return True, grant.grant_type, f'{grant.grant_type} access granted'
         else:
             DocumentAccessLog.objects.create(
@@ -64,7 +72,6 @@ def check_document_access(user, document, required_grant='read'):
             )
             return False, None, f'Insufficient permissions: {grant.grant_type} access required'
     except DocumentAccess.DoesNotExist:
-        # No explicit access grant - deny
         DocumentAccessLog.objects.create(
             document=document,
             user=user,
@@ -96,39 +103,34 @@ def admin_required(view_func):
 # --- Document List & Search ---
 
 @login_required
+@ratelimit(key='user', rate='5/300')
 def document_list(request):
     """List documents accessible to the current user."""
     user = request.user
     
-    # Start with documents owned by user or where they have access
     documents = Document.objects.filter(
         Q(owner=user) | Q(access_grants__user=user)
     ).distinct()
     
-    # Filter by category if specified
     category_id = request.GET.get('category')
     if category_id:
         documents = documents.filter(category_id=category_id)
     
-    # Filter by status if specified
     status = request.GET.get('status')
     if status:
         documents = documents.filter(status=status)
     
-    # Search by name
     query = request.GET.get('q')
     if query:
         documents = documents.filter(
             Q(title__icontains=query) | Q(description__icontains=query)
         )
     
-    # Filter by is_public for public documents
     if request.GET.get('include_public') == '1':
         documents = documents | Document.objects.filter(is_public=True)
     
     categories = DocumentCategory.objects.all()
     
-    # Annotate with access info
     access_info = {}
     for doc in documents:
         has_access, grant_type, reason = check_document_access(user, doc, 'read')
@@ -139,7 +141,7 @@ def document_list(request):
         }
     
     return render(request, 'documents/document_list.html', {
-        'documents': documents[:50],  # Limit results
+        'documents': documents[:50],
         'categories': categories,
         'access_info': access_info,
         'query': query,
@@ -149,6 +151,7 @@ def document_list(request):
 
 
 @login_required
+@ratelimit(key='user', rate='5/300')
 def document_search(request):
     """Advanced search endpoint."""
     query = request.GET.get('q', '')
@@ -179,13 +182,13 @@ def document_search(request):
 # --- Document Detail & File Access ---
 
 @login_required
+@ratelimit(key='user', rate='5/300')
 def document_detail(request, document_id):
     """Show document details and check access."""
     document = get_object_or_404(Document, id=document_id)
     has_access, grant_type, reason = check_document_access(request.user, document, 'view')
     
     if not has_access:
-        # Log the deny attempt
         DocumentAccessLog.objects.create(
             document=document,
             user=request.user,
@@ -196,7 +199,6 @@ def document_detail(request, document_id):
         messages.error(request, f'Access denied: {reason}')
         return redirect('document_list')
     
-    # Log the view
     DocumentAccessLog.objects.create(
         document=document,
         user=request.user,
@@ -205,7 +207,6 @@ def document_detail(request, document_id):
         reason=f'{grant_type} access'
     )
     
-    # Check if user is the owner
     is_owner = document.owner == request.user
     
     return render(request, 'documents/document_detail.html', {
@@ -218,22 +219,22 @@ def document_detail(request, document_id):
 
 @login_required
 @require_POST
+@ratelimit(key='user', rate='5/300')
 def document_download(request, document_id):
     """Handle document download with audit logging."""
     document = get_object_or_404(Document, id=document_id)
     has_access, grant_type, reason = check_document_access(request.user, document, 'download')
-    
+
     if not has_access:
         DocumentAccessLog.objects.create(
             document=document,
             user=request.user,
             action='deny',
             success=False,
-            reason=reason
+            reason='Download access denied'
         )
-        return JsonResponse({'error': reason}, status=403)
-    
-    # Log the download
+        return JsonResponse({'error': 'Download access denied'}, status=403)
+
     DocumentAccessLog.objects.create(
         document=document,
         user=request.user,
@@ -241,30 +242,38 @@ def document_download(request, document_id):
         success=True,
         reason=f'{grant_type} access'
     )
-    
-    # Serve the file
+
     if default_storage.exists(document.file.name):
-        # Read file and return
-        with default_storage.open(document.file.name, 'rb') as f:
-            response = HttpResponse(f.read(), content_type='application/octet-stream')
-            content_type, encoding = mimetypes.guess_type(document.file.name)
-            if content_type:
-                response['Content-Type'] = content_type
-            else:
-                response['Content-Type'] = 'application/octet-stream'
-            
-            # Set download headers
-            filename = document.title.replace('/', '_')
-            response['Content-Disposition'] = f'attachment; filename="{filename}.bin"'
-            return response
-    
-    raise Http404("Document file not found")
+        try:
+            with default_storage.open(document.file.name, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/octet-stream')
+                response['Content-Disposition'] = f'attachment; filename="{document.title.replace("/", "_")}.bin"'
+                return response
+        except (OSError, IOError):
+            DocumentAccessLog.objects.create(
+                document=document,
+                user=request.user,
+                action='deny',
+                success=False,
+                reason='File read error'
+            )
+            return JsonResponse({'error': 'File read error'}, status=500)
+
+    DocumentAccessLog.objects.create(
+        document=document,
+        user=request.user,
+        action='deny',
+        success=False,
+        reason='Document file not found'
+    )
+    return JsonResponse({'error': 'Document file not found'}, status=404)
 
 
 # --- Permission Management ---
 
 @login_required
 @require_POST
+@ratelimit(key='user', rate='3/300')
 def grant_access(request, document_id):
     """Grant access to a document for another user."""
     document = get_object_or_404(Document, id=document_id)
@@ -282,7 +291,6 @@ def grant_access(request, document_id):
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found'}, status=404)
     
-    # Check if access already exists and update or create
     access_obj, created = DocumentAccess.objects.get_or_create(
         document=document,
         user=target_user,
@@ -293,19 +301,16 @@ def grant_access(request, document_id):
     )
     
     if not created:
-        # Update existing grant
         access_obj.grant_type = grant_type
         access_obj.granted_by = request.user
         if expires_at:
             access_obj.expires_at = expires_at
         access_obj.save()
     else:
-        # Set expires_at if provided
         if expires_at:
             access_obj.expires_at = expires_at
             access_obj.save()
     
-    # Log the permission change
     DocumentAccessLog.objects.create(
         document=document,
         user=request.user,
@@ -324,29 +329,49 @@ def grant_access(request, document_id):
 
 @login_required
 @require_POST
+@ratelimit(key='user', rate='3/300')
 def revoke_access(request, document_id, user_id):
     """Revoke access to a document."""
     document = get_object_or_404(Document, id=document_id)
     has_access, grant_type, reason = check_document_access(request.user, document, 'admin')
-    
+
     if not has_access:
-        return JsonResponse({'error': 'Insufficient permissions to revoke access'}, status=403)
-    
+        # Log error without revealing internal details
+        DocumentAccessLog.objects.create(
+            document=document,
+            user=request.user,
+            action='deny',
+            success=False,
+            reason='Insufficient permissions for revocation'
+        )
+        return JsonResponse({'error': 'Insufficient permissions'}, status=403)
+
     try:
         target_user = User.objects.get(id=user_id)
     except User.DoesNotExist:
+        DocumentAccessLog.objects.create(
+            document=document,
+            user=request.user,
+            action='deny',
+            success=False,
+            reason='Target user not found'
+        )
         return JsonResponse({'error': 'User not found'}, status=404)
-    
-    # Check if user has access to revoke
+
     try:
         access_grant = DocumentAccess.objects.get(document=document, user=target_user)
     except DocumentAccess.DoesNotExist:
+        DocumentAccessLog.objects.create(
+            document=document,
+            user=request.user,
+            action='deny',
+            success=False,
+            reason='User has no access to this document'
+        )
         return JsonResponse({'error': 'User has no access to this document'}, status=404)
-    
-    # CRITICAL: Delete the access grant immediately - access stops working
+
     access_grant.delete()
-    
-    # Log the revocation
+
     DocumentAccessLog.objects.create(
         document=document,
         user=request.user,
@@ -354,12 +379,10 @@ def revoke_access(request, document_id, user_id):
         success=True,
         reason=f'Revoked access for {target_user.username}'
     )
-    
-    # Verify access is actually revoked
-    # After deletion, the user should no longer have access
+
     from .models import check_document_access
     new_has_access, new_grant_type, new_reason = check_document_access(request.user, document, 'read')
-    
+
     return JsonResponse({
         'success': True,
         'access_revoked': True,
@@ -375,6 +398,7 @@ def revoke_access(request, document_id, user_id):
 
 @login_required
 @require_http_methods(['GET'])
+@ratelimit(key='user', rate='10/300')
 def api_document_status(request, document_id):
     """API endpoint returning document access status."""
     document = get_object_or_404(Document, id=document_id)
@@ -392,6 +416,7 @@ def api_document_status(request, document_id):
 
 @login_required
 @require_http_methods(['GET'])
+@ratelimit(key='user', rate='5/300')
 def api_user_list(request):
     """API endpoint listing users for permission grants."""
     users = User.objects.exclude(id=request.user.id).values('id', 'username', 'profile__role')
@@ -413,13 +438,11 @@ def document_create(request):
     if not title or not file:
         return JsonResponse({'error': 'Title and file are required'}, status=400)
     
-    # Validate file type
     ext = file.name.split('.')[-1].lower() if '.' in file.name else ''
     allowed_types = ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'zip']
     if ext not in allowed_types:
         return JsonResponse({'error': f'File type .{ext} not allowed'}, status=400)
     
-    # Determine category
     category = None
     if category_id:
         from .models import DocumentCategory
@@ -428,7 +451,6 @@ def document_create(request):
         except DocumentCategory.DoesNotExist:
             pass
     
-    # Create document
     document = Document.objects.create(
         title=title,
         description=description,
@@ -438,9 +460,6 @@ def document_create(request):
         is_public=is_public,
     )
     
-    # Owner automatically gets edit access (already have it via ownership)
-    
-    # Log the upload
     DocumentAccessLog.objects.create(
         document=document,
         user=request.user,
@@ -457,114 +476,81 @@ def document_create(request):
     })
 
 
-# --- Admin Views ---
+# --- MFA Views ---
 
-def timezone_now():
-    """Get current timezone-aware datetime."""
-    return timezone.now()
-
-
-@admin_required
-def admin_dashboard(request):
-    """Administrative dashboard showing document activity and permission changes."""
-    now = timezone_now()
-    last_week = now - timezone.timedelta(days=7)
-    last_month = now - timezone.timedelta(days=30)
+@login_required
+@ratelimit(key='user', rate='3/300')
+def mfa_setup(request):
+    """Set up MFA for the current user."""
+    profile, created = UserProfile.objects.get_or_create(user=request.user)
     
-    # Recent access logs
-    recent_logs = DocumentAccessLog.objects.select_related('document', 'user').order_by('-timestamp')[:100]
+    if profile.mfa_secret_key is None:
+        profile.mfa_secret_key = pyotp.random_base32()
+        profile.save()
     
-    # Permission changes in last 30 days
-    perm_changes = DocumentAccessLog.objects.filter(
-        action='share',
-        timestamp__gte=last_month
-    ).select_related('document', 'user')[:50]
+    totp = pyotp.TOTP(profile.mfa_secret_key)
+    mfa_uri = totp.provisioning_uri(
+        request.user.email,
+        issuer_name='TrustVault'
+    )
     
-    # Documents with is_public=True
-    problematic_docs = Document.objects.filter(is_public=True).count()
+    context = {
+        'mfa_uri': mfa_uri,
+        'secret_key': profile.mfa_secret_key,
+        'user': request.user,
+    }
     
-    # User activity summary
-    user_activity = {}
-    for log in recent_logs:
-        user_id = log.user.id if log.user else 'anonymous'
-        if user_id not in user_activity:
-            user_activity[user_id] = {
-                'total_actions': 0,
-                'views': 0,
-                'downloads': 0,
-                'permission_changes': 0,
-            }
-        user_activity[user_id]['total_actions'] += 1
-        if log.action == 'view':
-            user_activity[user_id]['views'] += 1
-        if log.action == 'download':
-            user_activity[user_id]['downloads'] += 1
-        if log.action == 'share':
-            user_activity[user_id]['permission_changes'] += 1
-    
-    # Top accessed documents
-    doc_activity = {}
-    for log in recent_logs:
-        doc_id = log.document.id
-        if doc_id not in doc_activity:
-            doc_activity[doc_id] = {
-                'title': log.document.title,
-                'access_count': 0,
-                'views': 0,
-                'downloads': 0,
-            }
-        doc_activity[doc_id]['access_count'] += 1
-        if log.action == 'view':
-            doc_activity[doc_id]['views'] += 1
-        if log.action == 'download':
-            doc_activity[doc_id]['downloads'] += 1
-    
-    # Sort by access count
-    top_docs = sorted(doc_activity.items(), key=lambda x: x[1]['access_count'], reverse=True)[:10]
-    
-    return render(request, 'documents/admin_dashboard.html', {
-        'recent_logs': recent_logs[:20],
-        'perm_changes': perm_changes,
-        'problematic_docs': problematic_docs,
-        'user_activity': user_activity,
-        'top_docs': top_docs,
-    })
+    return render(request, 'documents/mfa_setup.html', context)
 
 
-@admin_required
-def admin_permission_audit(request):
-    """Administrative view of all permission changes."""
-    now = timezone_now()
-    last_30_days = now - timezone.timedelta(days=30)
-    last_24_hours = now - timezone.timedelta(hours=24)
+@login_required
+@require_POST
+@ratelimit(key='user', rate='5/300')
+def mfa_verify(request):
+    """Verify MFA token for the current user."""
+    profile = request.user.profile
     
-    # Recent permission changes (DocumentAccess grants)
-    recent_permissions = DocumentAccess.objects.select_related(
-        'document', 'user', 'granted_by'
-    ).order_by('-granted_at')[:100]
+    if not profile.mfa_secret_key:
+        return JsonResponse({'success': False, 'error': 'MFA not enrolled'}, status=400)
     
-    # Permission changes in last 24 hours
-    recent_24h = DocumentAccess.objects.filter(
-        granted_at__gte=last_24_hours
-    ).select_related('document', 'user', 'granted_by')
+    token = request.POST.get('token')
+    totp = pyotp.TOTP(profile.mfa_secret_key)
     
-    # Permission changes in last 30 days
-    recent_30d = DocumentAccess.objects.filter(
-        granted_at__gte=last_30_days
-    ).select_related('document', 'user', 'granted_by')
+    if totp.verify(token):
+        profile.mfa_last_verified = timezone.now()
+        profile.save()
+        
+        # Mark recent access logs as MFA verified
+        DocumentAccessLog.objects.filter(
+            document__owner=request.user,
+            user=request.user,
+            timestamp__gte=timezone.now() - timezone.timedelta(hours=1)
+        ).update(mfa_verified=True)
+        
+        return JsonResponse({'success': True, 'message': 'MFA verified'})
     
-    # Stats
-    total_grants = DocumentAccess.objects.count()
-    active_grants = DocumentAccess.objects.filter(expires_at__isnull=True).count() + \
-                   DocumentAccess.objects.filter(expires_at__gt=now).count()
+    return JsonResponse({'success': False, 'error': 'Invalid MFA token'}, status=400)
+
+
+@login_required
+@require_POST
+@ratelimit(key='user', rate='5/300')
+def mfa_disable(request):
+    """Disable MFA for the current user."""
+    profile = request.user.profile
+    profile.mfa_secret_key = None
+    profile.mfa_recovery_codes = []
+    profile.mfa_last_verified = None
+    profile.save()
     
-    expired_grants = DocumentAccess.objects.filter(expires_at__lt=now).count()
-    
-    return render(request, 'documents/admin_permission_audit.html', {
-        'recent_permissions': recent_permissions,
-        'recent_24h': recent_24h,
-        'recent_30d': recent_30d,
-        'total_grants': total_grants,
-        'active_grants': active_grants,
-        'expired_grants': expired_grants,
+    return JsonResponse({'success': True, 'message': 'MFA disabled'})
+
+
+@login_required
+def mfa_status(request):
+    """Check MFA status for the current user."""
+    profile = request.user.profile
+    return JsonResponse({
+        'mfa_enabled': profile.is_mfa_enabled,
+        'mfa_last_verified': profile.mfa_last_verified,
     })

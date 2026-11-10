@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% load allauth socialaccount %}
+
+{% block content %}
+<h1>TrustVault Sign Up</h1>
+
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title">Create Account</h5>
+      </div>
+      <div class="card-body">
+        <form method="post" class="needs-validation" novalidate>
+          {% csrf_token %}
+
+          <h6>Or continue with:</h6>
+
+          <div class="text-center mb-3">
+            <!-- Google OAuth -->
+            <a href="{% provider_login_url 'google' %}" class="btn btn-outline dark btn-lg w-100 mb-2">
+              <i class="fab fa-google me-2"></i> Continue with Google
+            </a>
+
+            <!-- Twitter OAuth -->
+            <a href="{% provider_login_url 'twitter' %}" class="btn btn-outline dark btn-lg w-100 mb-2">
+              <i class="fab fa-twitter me-2"></i> Continue with Twitter
+            </a>
+          </div>
+
+          <!-- Registration Form -->
+          <h6>Or register with email:</h6>
+
+          <div class="mb-3">
+            <label for="username" class="form-label">Username</label>
+            <input type="text" name="username" id="username" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" name="email" id="email" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="password1" class="form-label">Password</label>
+            <input type="password" name="password1" id="password1" class="form-control" required>
+            <small class="form-text text-muted">
+              Minimum 6 characters, uppercase, lowercase, digit, and special character (!@#$%&*)
+            </small>
+          </div>
+
+          <div class="mb-3">
+            <label for="password2" class="form-label">Confirm Password</label>
+            <input type="password" name="password2" id="password2" class="form-control" required>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100">Sign Up</button>
+
+          <hr>
+          <p class="text-center small">
+            Already have an account? <a href="{% url 'login' %}">Sign In</a>
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Initialize form validation
+  (function () {
+    'use strict'
+    var forms = document.querySelectorAll('.needs-validation')
+    Array.prototype.slice.call(forms)
+      .forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          if (!form.checkValidity()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+          form.classList.add('was-validated')
+        }, false)
+      })
+  })()
+
+  // Custom password match validation
+  document.querySelectorAll('input[type="password"]')[0].addEventListener('blur', function() {
+    const password = this.value;
+    const confirm = document.querySelectorAll('input[type="password"]')[1]?.value;
+    const form = this.closest('form');
+
+    if (password && confirm) {
+      if (password !== confirm) {
+        // Add error styling to confirm field
+        confirm.style.borderColor = 'var(--bs-danger)';
+        confirm.setCustomValidity('Passwords do not match');
+      } else {
+        confirm.style.borderColor = '';
+        confirm.setCustomValidity('');
+      }
+    }
+  });
+</script>
+{% endblock %}
