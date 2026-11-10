@@ -73,6 +73,14 @@ class ChangePasswordRequest(BaseModel):
 class MessageResponse(BaseModel):
     message: str
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+class TwitterAuthRequest(BaseModel):
+    code: str
+    code_verifier: Optional[str] = None
+    redirect_uri: Optional[str] = None
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

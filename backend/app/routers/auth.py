@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import secrets
 import hashlib
 from datetime import datetime, timedelta
@@ -17,7 +20,9 @@ from app.schemas import (
     VerifyOTPResponse,
     ResetPasswordRequest,
     ChangePasswordRequest,
-    MessageResponse
+    MessageResponse,
+    GoogleAuthRequest,
+    TwitterAuthRequest
 )
 from app.auth import (
     hash_password,
@@ -335,3 +340,177 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.get("/oauth/config")
+async def get_oauth_config():
+    """Return public OAuth client IDs so frontend knows whether real auth is configured."""
+    google_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    twitter_id = os.getenv("TWITTER_CLIENT_ID", "").strip()
+    return {
+        "google_client_id": google_id,
+        "twitter_client_id": twitter_id,
+        "google_enabled": bool(google_id),
+        "twitter_enabled": bool(twitter_id),
+    }
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(payload: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    """Authenticate or register user via Google ID Token."""
+    import urllib.request
+    import json
+
+    token = payload.id_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing Google ID token")
+
+    configured_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+
+    # Verify ID token with Google's tokeninfo endpoint
+    try:
+        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
+        req = urllib.request.Request(url, headers={"User-Agent": "TrustVault-Backend"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid or expired Google token: {str(e)}")
+
+    if "email" not in data or not data.get("email_verified", False):
+        raise HTTPException(status_code=401, detail="Google account email not verified")
+
+    if configured_client_id and data.get("aud") != configured_client_id:
+        raise HTTPException(status_code=401, detail="Google token audience mismatch")
+
+    email = data["email"].lower().strip()
+
+    # Find or create user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalars().first()
+
+    if not user:
+        random_pwd = secrets.token_urlsafe(32) + "!A1a"
+        user = User(
+            email=email,
+            password_hash=hash_password(random_pwd),
+            role=RoleEnum.USER
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        await log_audit_event(
+            db=db,
+            actor_id=user.id,
+            action="USER_REGISTER_GOOGLE",
+            target_type="User",
+            target_id=str(user.id),
+            payload={"email": user.email, "provider": "google"}
+        )
+    else:
+        await log_audit_event(
+            db=db,
+            actor_id=user.id,
+            action="USER_LOGIN_GOOGLE",
+            target_type="User",
+            target_id=str(user.id),
+            payload={"email": user.email, "provider": "google"}
+        )
+
+    access_token = create_access_token(
+        data={"sub": user.email, "user_id": user.id, "role": user.role}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/twitter", response_model=TokenResponse)
+async def twitter_login(payload: TwitterAuthRequest, db: AsyncSession = Depends(get_db)):
+    """Authenticate or register user via Twitter (X) OAuth 2.0 PKCE."""
+    import urllib.request
+    import urllib.parse
+    import json
+    import base64
+
+    client_id = os.getenv("TWITTER_CLIENT_ID", "").strip()
+    client_secret = os.getenv("TWITTER_CLIENT_SECRET", "").strip()
+    redirect_uri = payload.redirect_uri or os.getenv("TWITTER_REDIRECT_URI", "http://localhost:5173/auth/callback").strip()
+
+    if not client_id:
+        raise HTTPException(status_code=500, detail="Twitter Client ID not configured on server")
+
+    # Exchange code for access token with X OAuth2 token endpoint
+    token_url = "https://api.twitter.com/2/oauth2/token"
+    token_data = {
+        "code": payload.code,
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code_verifier": payload.code_verifier or "challenge",
+    }
+    encoded_data = urllib.parse.urlencode(token_data).encode("utf-8")
+    req = urllib.request.Request(token_url, data=encoded_data, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    if client_secret:
+        basic_creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        req.add_header("Authorization", f"Basic {basic_creds}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token_resp = json.loads(resp.read().decode("utf-8"))
+            x_access_token = token_resp.get("access_token")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Twitter token exchange failed: {str(e)}")
+
+    if not x_access_token:
+        raise HTTPException(status_code=401, detail="No access token received from Twitter")
+
+    # Fetch user identity
+    try:
+        user_url = "https://api.twitter.com/2/users/me"
+        user_req = urllib.request.Request(user_url, headers={"Authorization": f"Bearer {x_access_token}"})
+        with urllib.request.urlopen(user_req, timeout=10) as resp:
+            x_user_data = json.loads(resp.read().decode("utf-8")).get("data", {})
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Failed to fetch Twitter user profile: {str(e)}")
+
+    username = x_user_data.get("username")
+    x_id = x_user_data.get("id")
+    if not username:
+        raise HTTPException(status_code=401, detail="Twitter user data missing")
+
+    email = f"{username.lower()}@x.trustvault.local"
+
+    # Find or create user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalars().first()
+
+    if not user:
+        random_pwd = secrets.token_urlsafe(32) + "!A1a"
+        user = User(
+            email=email,
+            password_hash=hash_password(random_pwd),
+            role=RoleEnum.USER
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        await log_audit_event(
+            db=db,
+            actor_id=user.id,
+            action="USER_REGISTER_TWITTER",
+            target_type="User",
+            target_id=str(user.id),
+            payload={"email": user.email, "twitter_id": x_id, "username": username}
+        )
+    else:
+        await log_audit_event(
+            db=db,
+            actor_id=user.id,
+            action="USER_LOGIN_TWITTER",
+            target_type="User",
+            target_id=str(user.id),
+            payload={"email": user.email, "twitter_id": x_id, "username": username}
+        )
+
+    access_token = create_access_token(
+        data={"sub": user.email, "user_id": user.id, "role": user.role}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}

@@ -47,6 +47,7 @@ interface AuthScreenProps {
   onSubmit: (e?: React.FormEvent) => void;
   quickLogin: (email: string, pass: string) => void;
   onGoogle: () => void;
+  onTwitter: () => void;
 }
 
 const quickAccounts = [
@@ -76,6 +77,7 @@ export default function AuthScreen({
   onSubmit,
   quickLogin,
   onGoogle,
+  onTwitter,
 }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -247,6 +249,20 @@ export default function AuthScreen({
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
               </svg>
               <span>Continue with Google</span>
+            </motion.button>
+
+            {/* Twitter / X sign-in */}
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={onTwitter}
+              className="w-full py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 text-white font-semibold text-sm transition flex items-center justify-center gap-2.5 border border-slate-700/60 shadow-lg shadow-black/30 mt-2 mb-3"
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+              <span>Continue with X (Twitter)</span>
             </motion.button>
 
             <div className="flex items-center gap-3 my-4">

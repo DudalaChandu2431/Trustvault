@@ -1,3 +1,13 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+ENV_PATH = Path("C:/Users/mudda/trustvault/backend/.env")
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base, async_session_maker

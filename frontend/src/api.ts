@@ -1,4 +1,9 @@
-const API_BASE = "http://127.0.0.1:8001/api/v1";
+const API_BASE = "http://127.0.0.1:8000/api/v1";
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
 
 export interface User {
   id: number;
@@ -95,6 +100,47 @@ export const api = {
     });
     if (!res.ok) throw new Error("Failed to get profile");
     return res.json();
+  },
+
+  async getOAuthConfig(): Promise<{
+    google_client_id: string;
+    twitter_client_id: string;
+    google_enabled: boolean;
+    twitter_enabled: boolean;
+  }> {
+    const res = await fetch(`${API_BASE}/auth/oauth/config`);
+    if (!res.ok) return { google_client_id: "", twitter_client_id: "", google_enabled: false, twitter_enabled: false };
+    return res.json();
+  },
+
+  async loginWithGoogle(idToken: string): Promise<TokenResponse> {
+    const res = await fetch(`${API_BASE}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: idToken })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Google sign-in failed" }));
+      throw new Error(err.detail || "Google sign-in failed");
+    }
+    const data: TokenResponse = await res.json();
+    this.setToken(data.access_token);
+    return data;
+  },
+
+  async loginWithTwitter(code: string, codeVerifier?: string, redirectUri?: string): Promise<TokenResponse> {
+    const res = await fetch(`${API_BASE}/auth/twitter`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: codeVerifier, redirect_uri: redirectUri })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Twitter sign-in failed" }));
+      throw new Error(err.detail || "Twitter sign-in failed");
+    }
+    const data: TokenResponse = await res.json();
+    this.setToken(data.access_token);
+    return data;
   },
 
   async getDocuments(): Promise<DocumentItem[]> {

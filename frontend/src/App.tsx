@@ -67,9 +67,21 @@ export default function App() {
   // Copied hash state
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
 
-  // Toasts & Google popup
+  // Toasts & OAuth popups
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [googleOpen, setGoogleOpen] = useState(false);
+  const [twitterOpen, setTwitterOpen] = useState(false);
+  const [oauthConfig, setOAuthConfig] = useState<{
+    google_client_id: string;
+    twitter_client_id: string;
+    google_enabled: boolean;
+    twitter_enabled: boolean;
+  }>({
+    google_client_id: "",
+    twitter_client_id: "",
+    google_enabled: false,
+    twitter_enabled: false,
+  });
 
   function notify(type: Toast["type"], message: string) {
     const id = ++toastSeq;
@@ -83,6 +95,43 @@ export default function App() {
   useEffect(() => {
     if (api.getToken()) {
       loadProfile();
+    }
+    // Fetch OAuth availability
+    api.getOAuthConfig().then((cfg) => {
+      setOAuthConfig(cfg);
+      // Dynamically load Google Identity Services script if client_id present
+      if (cfg.google_client_id && !(window as any).google) {
+        const s = document.createElement("script");
+        s.src = "https://accounts.google.com/gsi/client";
+        s.async = true;
+        s.defer = true;
+        document.body.appendChild(s);
+      }
+    }).catch(() => {});
+
+    // Check URL query parameters for OAuth callbacks (e.g. from Twitter / Google redirect)
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthCode = urlParams.get("code");
+    const oauthError = urlParams.get("error");
+
+    if (oauthError) {
+      notify("error", `OAuth error: ${oauthError}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (oauthCode) {
+      const storedVerifier = sessionStorage.getItem("x_code_verifier") || undefined;
+      setAuthLoading(true);
+      api.loginWithTwitter(oauthCode, storedVerifier, window.location.origin + "/auth/callback")
+        .then(() => {
+          sessionStorage.removeItem("x_code_verifier");
+          loadProfile();
+          notify("success", "Signed in via X (Twitter)! Vault unlocked.");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch((err) => {
+          notify("error", err.message || "Twitter login failed");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .finally(() => setAuthLoading(false));
     }
   }, []);
 
@@ -124,6 +173,58 @@ export default function App() {
     } catch {
       api.clearToken();
       setCurrentUser(null);
+    }
+  }
+
+  function handleGoogleTrigger() {
+    if (oauthConfig.google_enabled && (window as any).google) {
+      // Use Google Identity Services One Tap / Token Client
+      const client = (window as any).google.accounts.id;
+      client.initialize({
+        client_id: oauthConfig.google_client_id,
+        callback: async (response: any) => {
+          if (response.credential) {
+            setAuthLoading(true);
+            try {
+              await api.loginWithGoogle(response.credential);
+              await loadProfile();
+              notify("success", "Signed in via Google! Vault unlocked.");
+            } catch (err: any) {
+              notify("error", err.message || "Google sign-in failed");
+            } finally {
+              setAuthLoading(false);
+            }
+          }
+        },
+      });
+      client.prompt();
+    } else {
+      setGoogleOpen(true);
+    }
+  }
+
+  function handleTwitterTrigger() {
+    if (oauthConfig.twitter_enabled && oauthConfig.twitter_client_id) {
+      // PKCE Twitter OAuth 2.0 flow
+      const array = new Uint8Array(32);
+      window.crypto.getRandomValues(array);
+      const verifier = Array.from(array, (byte) => ("0" + (byte & 0xff).toString(16)).slice(-2)).join("");
+      sessionStorage.setItem("x_code_verifier", verifier);
+
+      // Challenge = simple plain or sha256 (Twitter accepts plain for confidential clients or S256)
+      const redirectUri = window.location.origin + "/auth/callback";
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: oauthConfig.twitter_client_id,
+        redirect_uri: redirectUri,
+        scope: "users.read tweet.read offline.access",
+        state: "state_" + Math.random().toString(36).substring(2),
+        code_challenge: verifier,
+        code_challenge_method: "plain",
+      });
+      window.location.href = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
+    } else {
+      setTwitterOpen(true);
     }
   }
 
@@ -356,7 +457,8 @@ export default function App() {
             authLoading={authLoading}
             onSubmit={handleLogin}
             quickLogin={quickLogin}
-            onGoogle={() => setGoogleOpen(true)}
+            onGoogle={handleGoogleTrigger}
+            onTwitter={handleTwitterTrigger}
           />
         ) : (
           <div>
@@ -918,7 +1020,7 @@ export default function App() {
 
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
 
-      {/* Animated Google sign-in popup */}
+      {/* Animated Google sign-in modal */}
       <Modal open={googleOpen} onClose={() => setGoogleOpen(false)} title="Continue with Google">
         <div className="text-center py-2">
           <div className="inline-flex p-3 rounded-2xl bg-white/10 border border-white/15 mb-4">
@@ -929,16 +1031,51 @@ export default function App() {
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
           </div>
-          <p className="text-sm text-slate-300 leading-relaxed mb-1">
-            Google OAuth sign-in is not yet connected to this vault.
+          <h3 className="text-base font-semibold text-white mb-1.5">
+            Real Google Identity Service
+          </h3>
+          <p className="text-sm text-slate-300 leading-relaxed mb-3">
+            Add your OAuth 2.0 Client ID in <span className="font-mono text-emerald-400">backend/.env</span>:
           </p>
-          <p className="text-xs text-slate-500 mb-5">
-            Add <span className="font-mono text-emerald-400">GOOGLE_CLIENT_ID</span> to the backend
-            to enable it — until then, use email + password or the 1-Click presets above.
+          <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px] font-mono text-slate-300 text-left mb-4 break-all select-all">
+            GOOGLE_CLIENT_ID=&lt;your-id&gt;.apps.googleusercontent.com
+          </div>
+          <p className="text-xs text-slate-400 mb-5 leading-normal">
+            Once configured, clicking this button automatically renders Google's real One Tap & OAuth sign-in flow.
           </p>
           <button
             onClick={() => setGoogleOpen(false)}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition hover:from-emerald-400 hover:to-cyan-400"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
+
+      {/* Animated Twitter / X sign-in modal */}
+      <Modal open={twitterOpen} onClose={() => setTwitterOpen(false)} title="Continue with X (Twitter)">
+        <div className="text-center py-2">
+          <div className="inline-flex p-3 rounded-2xl bg-white/10 border border-white/15 mb-4">
+            <svg viewBox="0 0 24 24" className="w-7 h-7 text-white" fill="currentColor" aria-hidden>
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+          </div>
+          <h3 className="text-base font-semibold text-white mb-1.5">
+            Real Twitter OAuth 2.0 PKCE
+          </h3>
+          <p className="text-sm text-slate-300 leading-relaxed mb-3">
+            Add your Twitter Developer Client ID in <span className="font-mono text-cyan-400">backend/.env</span>:
+          </p>
+          <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px] font-mono text-slate-300 text-left mb-4 break-all select-all">
+            TWITTER_CLIENT_ID=&lt;your-client-id&gt;<br />
+            TWITTER_CLIENT_SECRET=&lt;your-secret&gt;
+          </div>
+          <p className="text-xs text-slate-400 mb-5 leading-normal">
+            Redirects directly to <span className="text-slate-300 font-mono">twitter.com/i/oauth2/authorize</span> with PKCE and exchanges for user session.
+          </p>
+          <button
+            onClick={() => setTwitterOpen(false)}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-bold text-sm shadow-lg shadow-cyan-500/25 transition hover:from-cyan-400 hover:to-blue-400"
           >
             Got it
           </button>
