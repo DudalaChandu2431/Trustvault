@@ -16,12 +16,18 @@ import {
   RefreshCw,
   Copy,
   Check,
-  FileCheck
+  FileCheck,
+  Settings as SettingsIcon
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { api, type User, type DocumentItem, type Permission, type AuditLog, type VerifyChainResponse } from "./api";
 import AuthScreen from "./components/AuthScreen";
 import Modal from "./components/Modal";
 import { ToastContainer, type Toast } from "./components/Toast";
+import DashboardPage, { type DashboardActivity } from "./components/DashboardPage";
+import SettingsPage from "./components/SettingsPage";
+
+const PAGE_EASE = [0.22, 1, 0.36, 1] as const;
 
 let toastSeq = 0;
 
@@ -88,9 +94,27 @@ export default function App() {
       }
       if (activeTab === "dashboard" && currentUser.role === "ADMIN") {
         verifyChain();
+        loadAuditLogs();
       }
     }
   }, [currentUser, activeTab]);
+
+  const dashboardActivity: DashboardActivity[] = auditLogs.map((log) => {
+    let action = log.action;
+    try {
+      const p = JSON.parse(log.payload_json || "{}");
+      if (p.email) action = `${log.action} · ${p.email}`;
+      if (p.filename) action = `${log.action} · ${p.filename}`;
+    } catch {
+      /* keep raw action */
+    }
+    return {
+      time: new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      action,
+      actor: log.target_type,
+      ok: !/REVOKE|DENIED|FAIL|ANOMAL/i.test(log.action),
+    };
+  });
 
   async function loadProfile() {
     try {
@@ -331,57 +355,45 @@ export default function App() {
         ) : (
           <div>
             <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 mb-8 gap-4">
-              <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-                <button
-                  onClick={() => setActiveTab("dashboard")}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                    activeTab === "dashboard"
-                      ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Shield className="w-4 h-4" />
-                  <span>Dashboard</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("vault")}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                    activeTab === "vault"
-                      ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Document Vault</span>
-                </button>
-
-                {currentUser.role === "ADMIN" && (
-                  <button
-                    onClick={() => setActiveTab("audit")}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                      activeTab === "audit"
-                        ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <ShieldCheckIcon className="w-4 h-4" />
-                    <span>Cryptographic Audit Trail</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setActiveTab("threats")}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                    activeTab === "threats"
-                      ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/20"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <ShieldAlert className="w-4 h-4" />
-                  <span>Threat Intelligence & Security</span>
-                </button>
-              </div>
+              <nav className="flex items-center space-x-1 sm:space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                {(
+                  [
+                    { key: "dashboard", label: "Dashboard", icon: Shield, pill: "bg-emerald-500", text: "text-slate-950" },
+                    { key: "vault", label: "Document Vault", icon: FileText, pill: "bg-emerald-500", text: "text-slate-950" },
+                    { key: "audit", label: "Cryptographic Audit Trail", icon: ShieldCheckIcon, pill: "bg-cyan-500", text: "text-slate-950", adminOnly: true },
+                    { key: "threats", label: "Threat Intelligence & Security", icon: ShieldAlert, pill: "bg-indigo-500", text: "text-white" },
+                    { key: "settings", label: "Settings & Privacy", icon: SettingsIcon, pill: "bg-emerald-500", text: "text-slate-950" },
+                  ] as const
+                )
+                  .filter((t) => !("adminOnly" in t) || currentUser.role === "ADMIN")
+                  .map((tab) => {
+                    const active = activeTab === tab.key;
+                    const IconCmp = tab.icon;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key as typeof activeTab)}
+                        className="relative px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold transition focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/60"
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="nav-pill"
+                            transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                            className={`absolute inset-0 rounded-lg ${tab.pill} shadow-md`}
+                          />
+                        )}
+                        <span
+                          className={`relative flex items-center space-x-1.5 transition-colors ${
+                            active ? tab.text : "text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          <IconCmp className="w-4 h-4" />
+                          <span className="hidden sm:inline">{tab.label}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+              </nav>
 
               <div className="flex items-center space-x-3 text-xs">
                 <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
@@ -395,83 +407,30 @@ export default function App() {
               </div>
             </div>
 
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 18, filter: "blur(5px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, y: -12, filter: "blur(5px)" }}
+                transition={{ duration: 0.35, ease: PAGE_EASE }}
+              >
             {activeTab === "dashboard" && (
-              <div className="space-y-8">
-                <div className="glass-card rounded-2xl p-6 border border-slate-800">
-                  <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center space-x-2">
-                    <Shield className="w-4 h-4 text-emerald-400" />
-                    <span>Security Overview</span>
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
-                      <div className="flex items-center space-x-2 text-emerald-400 mb-2">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-xs font-semibold uppercase tracking-wide">Encrypted Docs</span>
-                      </div>
-                      <p className="text-2xl font-bold text-white">{documents.length}</p>
-                      <p className="text-xs text-slate-500 mt-1">AES-256 Fernet at rest</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
-                      <div className="flex items-center space-x-2 text-cyan-400 mb-2">
-                        <Key className="w-4 h-4" />
-                        <span className="text-xs font-semibold uppercase tracking-wide">Hash Chain</span>
-                      </div>
-                      <p className="text-2xl font-bold text-white">
-                        {chainStatus ? chainStatus.total_records : "—"}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">SHA-256 tamper-evident records</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
-                      <div className="flex items-center space-x-2 text-indigo-400 mb-2">
-                        <UserCheck className="w-4 h-4" />
-                        <span className="text-xs font-semibold uppercase tracking-wide">Signed In As</span>
-                      </div>
-                      <p className="text-lg font-bold text-white break-all">{currentUser.email}</p>
-                      <p className="text-xs text-slate-500 mt-1">Role: {currentUser.role}</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4">
-                      <div className="flex items-center space-x-2 text-emerald-400 mb-2">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span className="text-xs font-semibold uppercase tracking-wide">Auth Status</span>
-                      </div>
-                      <p className="text-lg font-bold text-white">Argon2id + JWT</p>
-                      <p className="text-xs text-slate-500 mt-1">Rate-limited, lockout-protected</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="glass-card rounded-2xl p-6 border border-slate-800">
-                  <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center space-x-2">
-                    <Lock className="w-4 h-4 text-cyan-400" />
-                    <span>Quick Actions</span>
-                  </h3>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() => setActiveTab("vault")}
-                      className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload & Encrypt Document</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("threats")}
-                      className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold hover:bg-indigo-500/20 transition"
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5" />
-                      <span>Review Security Posture</span>
-                    </button>
-                    {currentUser.role === "ADMIN" && (
-                      <button
-                        onClick={() => setActiveTab("audit")}
-                        className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-semibold hover:bg-cyan-500/20 transition"
-                      >
-                        <ShieldCheckIcon className="w-3.5 h-3.5" />
-                        <span>Verify Audit Chain</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <DashboardPage
+                user={currentUser}
+                documents={documents}
+                chainStatus={chainStatus}
+                activity={dashboardActivity}
+                onNavigate={(t) => setActiveTab(t)}
+                onVerify={() => {
+                  if (currentUser.role === "ADMIN") {
+                    notify("info", "Re-verifying hash chain…");
+                    verifyChain().then(() => notify("success", "Chain verification complete."));
+                  } else {
+                    notify("info", "Chain verification requires admin role.");
+                  }
+                }}
+              />
             )}
 
             {activeTab === "vault" && (
@@ -832,6 +791,16 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {activeTab === "settings" && (
+              <SettingsPage
+                user={currentUser}
+                onSignOut={handleLogout}
+                notify={(type, message) => notify(type, message)}
+              />
+            )}
+              </motion.div>
+            </AnimatePresence>
           </div>
         )}
       </main>
