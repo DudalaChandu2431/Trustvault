@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>TrustVault Administrator Dashboard</h1>
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card bg-primary text-white mb-3">
+      <div class="card-header">Total Document Grants</div>
+      <div class="card-body">
+        <h5 class="card-title">{{ total_grants }}</h5>
+        <p class="card-text">Total permission grants in system</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card bg-success text-white mb-3">
+      <div class="card-header">Active Grants</div>
+      <div class="card-body">
+        <h5 class="card-title">{{ active_grants }}</h5>
+        <p class="card-text">Currently active (non-expired) grants</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card bg-danger text-white mb-3">
+      <div class="card-header">Expired Grants</div>
+      <div class="card-body">
+        <h5 class="card-title">{{ expired_grants }}</h5>
+        <p class="card-text">Expired access grants needing review</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Recent Permission Changes (Last 30 Days)</h2>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Document</th>
+      <th>User</th>
+      <th>Grant Type</th>
+      <th>Granted By</th>
+      <th>Date</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for perm in recent_30d %}
+    <tr>
+      <td>{{ perm.document.title }}</td>
+      <td>{{ perm.user.username }}</td>
+      <td>{{ perm.grant_type }}</td>
+      <td>{{ perm.granted_by.username }}</td>
+      <td>{{ perm.granted_at|date:"M d H:i" }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="6" class="text-center">No permission changes in last 30 days</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recent 24-Hour Activity</h2>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Document</th>
+      <th>User</th>
+      <th>Action</th>
+      <th>Success</th>
+      <th>Time</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in recent_24h %}
+    <tr class="{% if not log.success %}table-warning{% endif %}">
+      <td>{{ log.document.title }}</td>
+      <td>{{ log.user.username|default:"Anonymous" }}</td>
+      <td>{{ log.get_action_display }}</td>
+      <td>{% if log.success %}Yes{% else %}No{% endif %}</td>
+      <td>{{ log.timestamp|date:"M d H:i" }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="5" class="text-center">No activity in last 24 hours</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Top Accessed Documents (Last 7 Days)</h2>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Document</th>
+      <th>Access Count</th>
+      <th>Views</th>
+      <th>Downloads</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for doc_id, info in top_docs %}
+    <tr>
+      <td>{{ info.title }}</td>
+      <td>{{ info.access_count }}</td>
+      <td>{{ info.views }}</td>
+      <td>{{ info.downloads }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="4" class="text-center">No document access data available</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recently Revoked Permissions</h2>
+<p>Review the permission audit trail to verify that access revocation works immediately.</p>
+
+<hr>
+
+<a href="{% url 'admin:documents_documentaccesslog_changelist' %}" class="btn btn-secondary">
+  <i class="fas fa-list"></i> Full Access Log (Django Admin)
+</a>
+<a href="{% url 'admin:documents_documentaccess_changelist' %}" class="btn btn-secondary">
+  <i class="fas fa-list"></i> Permission Grants (Django Admin)
+</a>
+{% endblock %}

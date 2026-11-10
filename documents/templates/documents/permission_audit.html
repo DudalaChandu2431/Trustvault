@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>TrustVault Permission Audit</h1>
+
+<div class="row">
+  <div class="col-md-6">
+    <h2>Recent Permission Changes</h2>
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Document</th>
+          <th>User</th>
+          <th>Grant Type</th>
+          <th>Granted By</th>
+          <th>Granted At</th>
+          <th>Expires</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for perm in recent_permissions %}
+        <tr>
+          <td>{{ perm.document.title }}</td>
+          <td>{{ perm.user.username }}</td>
+          <td>{{ perm.grant_type }}</td>
+          <td>{{ perm.granted_by.username }}</td>
+          <td>{{ perm.granted_at|date:"M d H:i" }}</td>
+          <td>{% if perm.expires_at %}{{ perm.expires_at|date:"M d Y" }}{% else %}Never{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center">No permission grants found</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="col-md-6">
+    <h2>Statistics</h2>
+    <div class="card mb-3">
+      <div class="card-header">Grant Summary</div>
+      <div class="card-body">
+        <p>Total Grants: <strong>{{ total_grants }}</strong></p>
+        <p>Active Grants: <strong>{{ active_grants }}</strong></p>
+        <p class="text-danger">Expired Grants: <strong>{{ expired_grants }}</strong></p>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">Recent 24-Hour Activity</div>
+      <div class="card-body">
+        <p>Permission changes in last 24 hours: {{ recent_24h.count }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Audit Findings</h2>
+<p>Verify that:</p>
+<ul>
+  <li><strong>Principle 1:</strong> A document is reachable only by someone who was granted it.</li>
+  <li><strong>Principle 2:</strong> You can prove who reached it - audit trail includes attempts that were refused.</li>
+  <li><strong>Principle 3:</strong> Taking access away works immediately - whatever was issued before that moment stops working.</li>
+</ul>
+
+<hr>
+
+<a href="{% url 'admin:documents_document_changelist' %}" class="btn btn-secondary mb-2">
+  <i class="fas fa-folder"></i> Documents
+</a>
+<a href="{% url 'admin:documents_userprofile_changelist' %}" class="btn btn-secondary mb-2">
+  <i class="fas fa-user"></i> Users
+</a>
+<a href="{% url 'admin:admin_logentry_changelist' %}" class="btn btn-secondary">
+  <i class="fas fa-history"></i> Admin Log
+</a>
+{% endblock %}
